@@ -37,7 +37,7 @@ class _AutoPromptInputWrapper(nn.Module):
         return self.network(x)
 
     def state_dict(self, *args, **kwargs):
-        # Keep checkpoint weights compatible with stripped inference stub.
+        # Keep checkpoint weights compatible with nnInteractiveTrainer_stub-based inference checkpoints.
         return self.network.state_dict(*args, **kwargs)
 
     def load_state_dict(self, state_dict, strict: bool = True, assign: bool = False):
