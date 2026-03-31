@@ -167,23 +167,34 @@ class nnInteractiveTrainer(nnUNetTrainer):
         )
         foreground_mask, ignore_mask = self._get_foreground_and_ignore_masks(target)
         scribble_cfg = self.dataset_json.get("nninteractive_training_settings", {})
-        scribble_kernel_size = int(scribble_cfg.get("scribble_kernel_size", 5))
+        configured_scribble_kernel_size = int(
+            scribble_cfg.get("scribble_kernel_size", 5)
+        )
+        if configured_scribble_kernel_size < 0:
+            raise ValueError(
+                "nninteractive_training_settings.scribble_kernel_size must be >= 0"
+            )
+        scribble_kernel_size = max(1, configured_scribble_kernel_size)
+        if scribble_kernel_size % 2 == 0:
+            scribble_kernel_size += 1
         max_scribble_points = int(scribble_cfg.get("max_scribble_points", 32))
 
         for batch_idx in range(data.shape[0]):
             fg_idx = torch.argwhere(foreground_mask[batch_idx])
             if fg_idx.numel() > 0:
-                pick_fg = fg_idx[
-                    torch.randint(0, len(fg_idx), (1,), device=fg_idx.device)
-                ].squeeze(0)
+                rand_fg_idx = torch.randint(
+                    0, len(fg_idx), (1,), device=fg_idx.device
+                ).item()
+                pick_fg = fg_idx[rand_fg_idx]
                 prompt[(batch_idx, self.point_channel_positive, *pick_fg.tolist())] = 1
 
             bg_mask = (~foreground_mask[batch_idx]) & (~ignore_mask[batch_idx])
             bg_idx = torch.argwhere(bg_mask)
             if bg_idx.numel() > 0:
-                pick_bg = bg_idx[
-                    torch.randint(0, len(bg_idx), (1,), device=bg_idx.device)
-                ].squeeze(0)
+                rand_bg_idx = torch.randint(
+                    0, len(bg_idx), (1,), device=bg_idx.device
+                ).item()
+                pick_bg = bg_idx[rand_bg_idx]
                 prompt[(batch_idx, self.point_channel_negative, *pick_bg.tolist())] = 1
 
             fg_scribble_idx = self._sample_indices(fg_idx, max_scribble_points)
