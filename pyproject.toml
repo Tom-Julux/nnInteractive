@@ -39,6 +39,9 @@ dependencies = [
 [project.urls]
 homepage = "https://github.com/MIC-DKFZ/nnInteractive"
 
+[project.scripts]
+nnInteractivev2_train = "nnInteractive.trainer.run_training:run_training_entry"
+
 [project.optional-dependencies]
 dev = [
     "black",

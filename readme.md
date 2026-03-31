@@ -216,6 +216,52 @@ session.set_target_buffer(torch.zeros(NEW_IMAGE.shape[1:], dtype=torch.uint8))
 # Enjoy!
 ```
 
+## Training with nnUNetv2
+
+`nnInteractive` now ships a trainable nnUNetv2-compatible trainer in `nnInteractive.trainer.nnInteractiveTrainer`.
+
+### Prerequisites
+
+- Install `nnInteractive` (editable or pip install)
+- Set nnUNetv2 environment variables (`nnUNet_raw`, `nnUNet_preprocessed`, `nnUNet_results`)
+- Prepare a nnUNetv2 dataset and preprocessing as usual
+
+### Start training
+
+Use the provided entrypoint:
+
+```bash
+nnInteractivev2_train DATASET_ID_OR_NAME CONFIGURATION FOLD
+```
+
+For example:
+
+```bash
+nnInteractivev2_train 225 3d_fullres 0
+```
+
+This uses `nnInteractiveTrainer` by default and behaves like regular `nnUNetv2_train` with the same optional flags:
+
+- `-tr` custom trainer class in `nnInteractive.trainer` (default: `nnInteractiveTrainer`)
+- `-p` plans identifier (default: `nnUNetPlans`)
+- `-num_gpus` for DDP
+- `--c` continue training
+- `--val` only run validation
+- `--npz` export validation probabilities
+- `--disable_checkpointing`
+- `-device {cuda,cpu,mps}`
+
+### Prompt channels during training
+
+The trainer uses the nnUNetv2 architecture stack and extends the network input by 7 interaction channels.
+If your preprocessed batches contain only image channels, the trainer auto-creates interaction channels and samples sparse positive/negative point prompts from the ground truth for training.
+Validation runs with empty interaction channels to preserve deterministic behavior.
+
+### Inference compatibility
+
+The trainer writes `inference_session_class.json` to the model output folder at training start.
+This keeps checkpoints directly compatible with `nnInteractiveInferenceSession.initialize_from_trained_model_folder`.
+
 ## nnInteractive SuperVoxels
 
 As part of the `nnInteractive` framework, we provide a dedicated module for **supervoxel generation** based on [SAM](https://github.com/facebookresearch/segment-anything) and [SAM2](https://github.com/facebookresearch/sam2). This replaces traditional superpixel methods (e.g., SLIC) with **foundation model–powered 3D pseudo-labels**.
