@@ -253,13 +253,13 @@ This uses `nnInteractiveTrainer` by default and behaves like regular `nnUNetv2_t
 
 ### Prompt channels during training
 
-The trainer uses the nnUNetv2 architecture stack and extends the network input by 7 interaction channels (initial segmentation, bbox+/lasso+, bbox-/lasso-, point+, point-, scribble+, scribble-).
+The trainer uses the nnUNetv2 architecture stack and extends the network input by 7 interaction channels: initial segmentation (1), bbox/lasso positive (1), bbox/lasso negative (1), point positive (1), point negative (1), scribble positive (1), and scribble negative (1).
 If your preprocessed batches contain only image channels, the trainer auto-creates interaction channels and samples sparse positive/negative point prompts and sparse scribble prompts from foreground/background target regions for training.
 Validation runs with empty interaction channels to preserve deterministic behavior.
 
 Optional training controls can be placed in `dataset.json` under `nninteractive_training_settings`:
-- `scribble_kernel_size` (odd integer, default `5`; even values are auto-incremented, negative values raise an error)
-- `max_scribble_points` (default `32`)
+- `scribble_kernel_size` (odd integer, default `5`; values <= 0 are normalized to 1, and even values are auto-incremented to the next odd integer)
+- `max_scribble_points` (default `32`; set to `0` to disable scribble synthesis)
 
 ### Inference compatibility
 
