@@ -254,8 +254,12 @@ This uses `nnInteractiveTrainer` by default and behaves like regular `nnUNetv2_t
 ### Prompt channels during training
 
 The trainer uses the nnUNetv2 architecture stack and extends the network input by 7 interaction channels.
-If your preprocessed batches contain only image channels, the trainer auto-creates interaction channels and samples sparse positive/negative point prompts from the ground truth for training.
+If your preprocessed batches contain only image channels, the trainer auto-creates interaction channels and samples sparse positive/negative point prompts and sparse scribble prompts from foreground/background target regions for training.
 Validation runs with empty interaction channels to preserve deterministic behavior.
+
+Optional training controls can be placed in `dataset.json` under `nninteractive_training_settings`:
+- `scribble_kernel_size` (odd integer, default `5`)
+- `max_scribble_points` (default `32`)
 
 ### Inference compatibility
 

@@ -6,6 +6,8 @@ from batchgenerators.utilities.file_and_folder_operations import save_json
 from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer
 from torch import nn
 
+from nnInteractive.utils.erosion_dilation import iterative_3x3_same_padding_pool3d
+
 
 class _AutoPromptInputWrapper(nn.Module):
     """
@@ -46,8 +48,10 @@ class _AutoPromptInputWrapper(nn.Module):
 
 class nnInteractiveTrainer(nnUNetTrainer):
     prompt_channels = 7
-    point_channel_positive = 4
-    point_channel_negative = 5
+    point_channel_positive = 3
+    point_channel_negative = 4
+    scribble_channel_positive = 5
+    scribble_channel_negative = 6
 
     @staticmethod
     def build_network_architecture(
@@ -108,12 +112,7 @@ class nnInteractiveTrainer(nnUNetTrainer):
             target_tensor = target_tensor[:, 0]
         return target_tensor
 
-    def _build_sparse_point_prompts(self, data: torch.Tensor, target) -> torch.Tensor:
-        prompt = torch.zeros(
-            (data.shape[0], self.prompt_channels, *data.shape[2:]),
-            dtype=data.dtype,
-            device=data.device,
-        )
+    def _get_foreground_and_ignore_masks(self, target):
         target_tensor = self._get_highres_target(target)
         if self.label_manager.has_regions:
             if self.label_manager.has_ignore_label:
@@ -129,6 +128,47 @@ class nnInteractiveTrainer(nnUNetTrainer):
                 else torch.zeros_like(target_tensor, dtype=torch.bool)
             )
             foreground_mask = (target_tensor > 0) & (~ignore_mask)
+        return foreground_mask, ignore_mask
+
+    @staticmethod
+    def _sample_indices(candidate_idx: torch.Tensor, max_points: int) -> torch.Tensor:
+        if candidate_idx.numel() == 0 or max_points < 1:
+            return candidate_idx[:0]
+        n = min(max_points, len(candidate_idx))
+        selected = torch.randperm(len(candidate_idx), device=candidate_idx.device)[:n]
+        return candidate_idx[selected]
+
+    @staticmethod
+    def _draw_binary_points(
+        spatial_shape: Tuple[int, ...],
+        selected_indices: torch.Tensor,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> torch.Tensor:
+        out = torch.zeros(spatial_shape, dtype=dtype, device=device)
+        if selected_indices.numel() > 0:
+            out[tuple(selected_indices.T)] = 1
+        return out
+
+    def _dilate_sparse_mask(self, mask: torch.Tensor, kernel_size: int) -> torch.Tensor:
+        if kernel_size <= 1:
+            return mask
+        if mask.ndim == 3:
+            return iterative_3x3_same_padding_pool3d(mask[None, None], kernel_size)[
+                0, 0
+            ]
+        return mask
+
+    def _build_sparse_prompts(self, data: torch.Tensor, target) -> torch.Tensor:
+        prompt = torch.zeros(
+            (data.shape[0], self.prompt_channels, *data.shape[2:]),
+            dtype=data.dtype,
+            device=data.device,
+        )
+        foreground_mask, ignore_mask = self._get_foreground_and_ignore_masks(target)
+        scribble_cfg = self.dataset_json.get("nninteractive_training_settings", {})
+        scribble_kernel_size = int(scribble_cfg.get("scribble_kernel_size", 5))
+        max_scribble_points = int(scribble_cfg.get("max_scribble_points", 32))
 
         for batch_idx in range(data.shape[0]):
             fg_idx = torch.argwhere(foreground_mask[batch_idx])
@@ -145,6 +185,32 @@ class nnInteractiveTrainer(nnUNetTrainer):
                     torch.randint(0, len(bg_idx), (1,), device=bg_idx.device)
                 ].squeeze(0)
                 prompt[(batch_idx, self.point_channel_negative, *pick_bg.tolist())] = 1
+
+            fg_scribble_idx = self._sample_indices(fg_idx, max_scribble_points)
+            if fg_scribble_idx.numel() > 0:
+                fg_scribble = self._draw_binary_points(
+                    tuple(foreground_mask[batch_idx].shape),
+                    fg_scribble_idx,
+                    prompt.dtype,
+                    prompt.device,
+                )
+                fg_scribble = self._dilate_sparse_mask(
+                    fg_scribble, kernel_size=scribble_kernel_size
+                )
+                prompt[batch_idx, self.scribble_channel_positive] = fg_scribble
+
+            bg_scribble_idx = self._sample_indices(bg_idx, max_scribble_points)
+            if bg_scribble_idx.numel() > 0:
+                bg_scribble = self._draw_binary_points(
+                    tuple(foreground_mask[batch_idx].shape),
+                    bg_scribble_idx,
+                    prompt.dtype,
+                    prompt.device,
+                )
+                bg_scribble = self._dilate_sparse_mask(
+                    bg_scribble, kernel_size=scribble_kernel_size
+                )
+                prompt[batch_idx, self.scribble_channel_negative] = bg_scribble
         return prompt
 
     def _prepare_training_data(
@@ -160,7 +226,7 @@ class nnInteractiveTrainer(nnUNetTrainer):
                 f"Expected {expected_channels} or {prompt_expected_channels}."
             )
         prompt = (
-            self._build_sparse_point_prompts(data, target)
+            self._build_sparse_prompts(data, target)
             if add_sparse_prompts
             else torch.zeros(
                 (data.shape[0], self.prompt_channels, *data.shape[2:]),
