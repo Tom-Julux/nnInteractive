@@ -1,3 +1,4 @@
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from os import cpu_count
 from time import time
@@ -74,6 +75,9 @@ class nnInteractiveInferenceSession():
         self.new_interaction_zoom_out_factors: List[float] = []
         self.new_interaction_centers = []
         self.has_positive_bbox = False
+        self.prediction_history_size = 7
+        self._undo_history = deque(maxlen=self.prediction_history_size)
+        self._redo_history = deque(maxlen=self.prediction_history_size)
 
         # Create a thread pool executor for background tasks.
         # this only takes care of preprocessing and interaction memory initialization so there is no need to give it
@@ -119,6 +123,7 @@ class nnInteractiveInferenceSession():
         Must be 3d numpy array or torch.Tensor
         """
         self.target_buffer = target_buffer
+        self._clear_prediction_history()
 
     def set_do_autozoom(self, do_propagation: bool, max_num_patches: Optional[int] = None):
         self.do_autozoom = do_propagation
@@ -138,6 +143,66 @@ class nnInteractiveInferenceSession():
         empty_cache(self.device)
         self.original_image_shape = None
         self.has_positive_bbox = False
+        self._clear_prediction_history()
+
+    def _clear_prediction_history(self):
+        self._undo_history.clear()
+        self._redo_history.clear()
+
+    def _clone_target_buffer(self):
+        if self.target_buffer is None:
+            return None
+        if isinstance(self.target_buffer, np.ndarray):
+            return self.target_buffer.copy()
+        if isinstance(self.target_buffer, torch.Tensor):
+            return self.target_buffer.clone()
+        raise RuntimeError('target_buffer must be np.ndarray or torch.Tensor')
+
+    def _capture_prediction_state(self):
+        if self.interactions is None or self.target_buffer is None:
+            return
+        self._undo_history.append({
+            'interactions': self.interactions.clone(),
+            'target_buffer': self._clone_target_buffer(),
+        })
+        self._redo_history.clear()
+
+    def _restore_prediction_state(self, state: dict):
+        if self.interactions is None or self.target_buffer is None:
+            raise RuntimeError('Cannot restore state without interactions and target_buffer')
+
+        self.interactions.copy_(state['interactions'])
+        target_state = state['target_buffer']
+
+        if isinstance(self.target_buffer, np.ndarray):
+            if not isinstance(target_state, np.ndarray):
+                raise RuntimeError('Stored target buffer type does not match current target buffer type')
+            np.copyto(self.target_buffer, target_state)
+        elif isinstance(self.target_buffer, torch.Tensor):
+            if not isinstance(target_state, torch.Tensor):
+                raise RuntimeError('Stored target buffer type does not match current target buffer type')
+            self.target_buffer.copy_(target_state.to(self.target_buffer.device))
+        else:
+            raise RuntimeError('target_buffer must be np.ndarray or torch.Tensor')
+
+        self.new_interaction_centers = []
+        self.new_interaction_zoom_out_factors = []
+
+    def undo_prediction(self) -> bool:
+        if len(self._undo_history) <= 1:
+            return False
+        current_state = self._undo_history.pop()
+        self._redo_history.append(current_state)
+        self._restore_prediction_state(self._undo_history[-1])
+        return True
+
+    def redo_prediction(self) -> bool:
+        if len(self._redo_history) == 0:
+            return False
+        restored_state = self._redo_history.pop()
+        self._undo_history.append(restored_state)
+        self._restore_prediction_state(restored_state)
+        return True
 
     def _initialize_interactions(self, image_torch: torch.Tensor):
         # there is a bug in 6.11 that doesn't allow pinning large tensors
@@ -201,6 +266,7 @@ class nnInteractiveInferenceSession():
                 self.target_buffer.zero_()
         empty_cache(self.device)
         self.has_positive_bbox = False
+        self._clear_prediction_history()
 
     def add_bbox_interaction(self, bbox_coords, include_interaction: bool, run_prediction: bool = True) -> np.ndarray:
         if include_interaction:
@@ -471,6 +537,7 @@ class nnInteractiveInferenceSession():
 
         self.new_interaction_centers = []
         self.new_interaction_zoom_out_factors = []
+        self._capture_prediction_state()
         empty_cache(self.device)
 
     def _build_network_input(self, prediction_center, zoom_out_factor):
