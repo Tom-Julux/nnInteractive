@@ -187,10 +187,6 @@ session.add_lasso_interaction(LASSO_IMAGE, include_interaction=True)
 
 # You can combine any number of interactions as needed. 
 # The model refines the segmentation result incrementally with each new interaction.
-# Undo/redo is available for the last 7 prediction states:
-session.undo_prediction()  # Undo one prediction step (returns True/False)
-session.redo_prediction()  # Redo one prediction step (returns True/False)
-
 # --- Retrieve Results ---
 # The target buffer holds the segmentation result.
 results = session.target_buffer.clone()
