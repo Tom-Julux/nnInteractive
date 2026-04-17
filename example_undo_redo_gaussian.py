@@ -4,7 +4,7 @@ import os
 import numpy as np
 import torch
 
-from nnInteractive.inference.inference_session import nnInteractiveInferenceSession
+from nnInteractive.inference.inference_session_undo_redo import nnInteractiveInferenceSessionUndoRedo
 
 
 def make_gaussian_image(size: int = 256, sigma: float = 0.25) -> np.ndarray:
@@ -47,7 +47,7 @@ def main():
         raise ValueError("Please provide --model-path or set NNINTERACTIVE_MODEL_PATH.")
 
     device = torch.device(args.device)
-    session = nnInteractiveInferenceSession(device=device, use_torch_compile=False, verbose=False)
+    session = nnInteractiveInferenceSessionUndoRedo(device=device, use_torch_compile=False, verbose=False)
     session.initialize_from_trained_model_folder(args.model_path)
 
     image = make_gaussian_image(size=256, sigma=0.25)
