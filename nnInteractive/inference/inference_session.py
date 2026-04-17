@@ -202,6 +202,9 @@ class nnInteractiveInferenceSession():
         self.has_positive_bbox = False
         self._clear_prediction_history()
 
+    def _clear_prediction_history(self):
+        pass
+
     def add_bbox_interaction(self, bbox_coords, include_interaction: bool, run_prediction: bool = True) -> np.ndarray:
         if include_interaction:
             self.has_positive_bbox = True
