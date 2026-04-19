@@ -187,7 +187,6 @@ session.add_lasso_interaction(LASSO_IMAGE, include_interaction=True)
 
 # You can combine any number of interactions as needed. 
 # The model refines the segmentation result incrementally with each new interaction.
-
 # --- Retrieve Results ---
 # The target buffer holds the segmentation result.
 results = session.target_buffer.clone()

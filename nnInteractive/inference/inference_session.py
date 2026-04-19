@@ -74,7 +74,6 @@ class nnInteractiveInferenceSession():
         self.new_interaction_zoom_out_factors: List[float] = []
         self.new_interaction_centers = []
         self.has_positive_bbox = False
-
         # Create a thread pool executor for background tasks.
         # this only takes care of preprocessing and interaction memory initialization so there is no need to give it
         # more than 2 workers
@@ -201,6 +200,10 @@ class nnInteractiveInferenceSession():
                 self.target_buffer.zero_()
         empty_cache(self.device)
         self.has_positive_bbox = False
+        self._clear_prediction_history()
+
+    def _clear_prediction_history(self):
+        pass
 
     def add_bbox_interaction(self, bbox_coords, include_interaction: bool, run_prediction: bool = True) -> np.ndarray:
         if include_interaction:
