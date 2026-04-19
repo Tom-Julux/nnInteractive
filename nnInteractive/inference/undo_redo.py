@@ -33,6 +33,8 @@ from typing import Union
 import numpy as np
 import torch
 
+from nnInteractive.inference.inference_session import nnInteractiveInferenceSession
+
 
 def _clone_target_buffer(
     target_buffer: Union[np.ndarray, torch.Tensor, None],
@@ -47,7 +49,9 @@ def _clone_target_buffer(
     raise RuntimeError('target_buffer must be np.ndarray or torch.Tensor')
 
 
-def capture_prediction_state(session, undo_history: deque, redo_history: deque) -> None:
+def capture_prediction_state(
+    session: nnInteractiveInferenceSession, undo_history: deque, redo_history: deque
+) -> None:
     """Push the current session state onto *undo_history* and clear *redo_history*.
 
     Call this immediately after every prediction to make the resulting state
@@ -71,7 +75,7 @@ def capture_prediction_state(session, undo_history: deque, redo_history: deque) 
     redo_history.clear()
 
 
-def restore_prediction_state(session, state: dict) -> None:
+def restore_prediction_state(session: nnInteractiveInferenceSession, state: dict) -> None:
     """Overwrite the session's live tensors with the data stored in *state*.
 
     Args:
@@ -99,7 +103,9 @@ def restore_prediction_state(session, state: dict) -> None:
     session.new_interaction_zoom_out_factors = []
 
 
-def undo_prediction(session, undo_history: deque, redo_history: deque) -> bool:
+def undo_prediction(
+    session: nnInteractiveInferenceSession, undo_history: deque, redo_history: deque
+) -> bool:
     """Undo the most recent prediction by restoring the previous session state.
 
     The current (most recent) state is moved to *redo_history* so it can be
@@ -122,7 +128,9 @@ def undo_prediction(session, undo_history: deque, redo_history: deque) -> bool:
     return True
 
 
-def redo_prediction(session, undo_history: deque, redo_history: deque) -> bool:
+def redo_prediction(
+    session: nnInteractiveInferenceSession, undo_history: deque, redo_history: deque
+) -> bool:
     """Redo the last undone prediction by restoring the next session state.
 
     The restored state is moved back to *undo_history*.
