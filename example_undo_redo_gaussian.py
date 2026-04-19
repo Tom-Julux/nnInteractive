@@ -1,10 +1,16 @@
 import argparse
 import os
+from collections import deque
 
 import numpy as np
 import torch
 
-from nnInteractive.inference.inference_session_undo_redo import nnInteractiveInferenceSessionUndoRedo
+from nnInteractive.inference.inference_session import nnInteractiveInferenceSession
+from nnInteractive.inference.undo_redo import (
+    capture_prediction_state,
+    redo_prediction,
+    undo_prediction,
+)
 
 
 def make_gaussian_image(size: int = 256, sigma: float = 0.25) -> np.ndarray:
@@ -47,7 +53,7 @@ def main():
         raise ValueError("Please provide --model-path or set NNINTERACTIVE_MODEL_PATH.")
 
     device = torch.device(args.device)
-    session = nnInteractiveInferenceSessionUndoRedo(device=device, use_torch_compile=False, verbose=False)
+    session = nnInteractiveInferenceSession(device=device, use_torch_compile=False, verbose=False)
     session.initialize_from_trained_model_folder(args.model_path)
 
     image = make_gaussian_image(size=256, sigma=0.25)
@@ -56,16 +62,20 @@ def main():
     target = torch.zeros(image.shape[1:], dtype=torch.uint8, device=device)
     session.set_target_buffer(target)
 
+    undo_history: deque = deque(maxlen=7)
+    redo_history: deque = deque(maxlen=7)
+
     points = make_outward_points(center=128, step=12, n_steps=5)
 
     prediction_states = []
     for p in points:
         session.add_point_interaction(p, include_interaction=True, run_prediction=True)
+        capture_prediction_state(session, undo_history, redo_history)
         prediction_states.append(target.detach().clone())
         print(f"Added point {p}, foreground voxels: {int(target.sum().item())}")
 
     undo_steps = 0
-    while session.undo_prediction():
+    while undo_prediction(session, undo_history, redo_history):
         undo_steps += 1
         expected = prediction_states[-(undo_steps + 1)]
         if not torch.equal(target, expected):
@@ -73,7 +83,7 @@ def main():
         print(f"Undo {undo_steps} OK, foreground voxels: {int(target.sum().item())}")
 
     redo_steps = 0
-    while session.redo_prediction():
+    while redo_prediction(session, undo_history, redo_history):
         expected = prediction_states[redo_steps + 1]
         if not torch.equal(target, expected):
             raise RuntimeError(f"Redo mismatch at step {redo_steps + 1}.")
